@@ -1,75 +1,51 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React from 'react';
 import Image from 'next/image';
-import Link from 'next/link';
-import { getCart, updateCartItem, removeCartItem, clearCart } from '../lib/api';
-import { toast } from 'react-hot-toast';
-import { Cart, CartItemUpdateData } from '@/app/types';
+import { useRouter } from 'next/navigation';
+import { useCart } from '@/app/context/CartContext';
+import { useNotification } from '@/app/context/NotificationContext';
+import LoadingSpinner from '@/app/components/ui/LoadingSpinner';
+import Alert from '@/app/components/ui/Alert';
 
 export default function CartPage() {
   const router = useRouter();
-  const [cart, setCart] = useState<Cart | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { cart, isLoading, error, updateItem, removeItem } = useCart();
+  const { showNotification } = useNotification();
 
-  useEffect(() => {
-    fetchCart();
-  }, []);
-
-  const fetchCart = async () => {
+  const handleQuantityChange = async (itemId: number, quantity: number) => {
     try {
-      const data = await getCart();
-      setCart(data);
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || '장바구니를 불러오는데 실패했습니다.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleQuantityChange = async (itemId: number, newQuantity: number) => {
-    try {
-      await updateCartItem(itemId, { quantity: newQuantity });
-      await fetchCart();
-      toast.success('수량이 업데이트되었습니다.');
-    } catch (error) {
-      if (error instanceof Error) {
-        toast.error(error.message);
-      } else {
-        toast.error('수량 업데이트에 실패했습니다.');
+      if (quantity < 1) {
+        await removeItem(itemId);
+        return;
       }
+      await updateItem(itemId, quantity);
+    } catch (err: any) {
+      showNotification('error', err.message || '수량 변경에 실패했습니다.');
     }
   };
 
   const handleRemoveItem = async (itemId: number) => {
     try {
-      await removeCartItem(itemId);
-      await fetchCart();
-      toast.success('상품이 장바구니에서 제거되었습니다.');
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || '상품 제거에 실패했습니다.');
+      await removeItem(itemId);
+      showNotification('success', '상품이 장바구니에서 제거되었습니다.');
+    } catch (err: any) {
+      showNotification('error', err.message || '상품 제거에 실패했습니다.');
     }
   };
 
-  const handleClearCart = async () => {
-    try {
-      await clearCart();
-      await fetchCart();
-      toast.success('장바구니가 비워졌습니다.');
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || '장바구니 비우기에 실패했습니다.');
-    }
-  };
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center min-h-[50vh]">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
 
-  const handleCheckout = () => {
-    router.push('/checkout');
-  };
-
-  if (loading) {
+  if (error) {
     return (
       <div className="container mx-auto px-4 py-8">
-        <div className="text-center">로딩 중...</div>
+        <Alert type="error" message={error} />
       </div>
     );
   }
@@ -78,10 +54,14 @@ export default function CartPage() {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">장바구니가 비어있습니다</h1>
-          <Link href="/market" className="text-green-600 hover:text-green-700">
-            상품 둘러보기
-          </Link>
+          <h1 className="text-2xl font-bold mb-4">장바구니</h1>
+          <p className="text-gray-500 mb-8">장바구니가 비어있습니다.</p>
+          <button
+            onClick={() => router.push('/market')}
+            className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-600"
+          >
+            쇼핑 계속하기
+          </button>
         </div>
       </div>
     );
@@ -90,82 +70,107 @@ export default function CartPage() {
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold mb-8">장바구니</h1>
-      
-      <div className="grid grid-cols-1 gap-8">
-        {cart.items.map((item) => (
-          <div key={item.id} className="flex items-center border rounded-lg p-4 gap-4">
-            <div className="w-24 h-24 relative">
-              <Image
-                src={item.crop.images[0] || '/placeholder.png'}
-                alt={item.crop.name}
-                fill
-                className="object-cover rounded-md"
-              />
-            </div>
-            
-            <div className="flex-grow">
-              <Link href={`/market/${item.crop.id}`} className="font-semibold hover:text-green-600">
-                {item.crop.name}
-              </Link>
-              <p className="text-sm text-gray-600">{item.crop.farmer?.farm_name || '농장명 없음'}</p>
-              <p className="text-green-600">
-                {(item.crop.price_per_unit * item.quantity).toLocaleString()}원
-                <span className="text-sm text-gray-500 ml-1">
-                  ({item.crop.price_per_unit.toLocaleString()}원/{item.crop.unit})
-                </span>
-              </p>
-            </div>
-            
-            <div className="flex items-center gap-4">
-              <div className="flex items-center border rounded">
-                <button
-                  onClick={() => handleQuantityChange(item.id, Math.max(0.1, item.quantity - 0.1))}
-                  className="px-3 py-1 hover:bg-gray-100"
-                >
-                  -
-                </button>
-                <span className="px-3 py-1 min-w-[60px] text-center">
-                  {item.quantity.toFixed(1)} {item.crop.unit}
-                </span>
-                <button
-                  onClick={() => handleQuantityChange(item.id, item.quantity + 0.1)}
-                  className="px-3 py-1 hover:bg-gray-100"
-                >
-                  +
-                </button>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* 장바구니 아이템 목록 */}
+        <div className="lg:col-span-2 space-y-4">
+          {cart.items.map((item) => (
+            <div
+              key={item.id}
+              className="bg-white p-4 rounded-lg shadow-sm flex gap-4"
+            >
+              {/* 상품 이미지 */}
+              <div className="relative w-24 h-24 flex-shrink-0">
+                <Image
+                  src={item.crop.images[0]}
+                  alt={item.crop.name}
+                  fill
+                  className="object-cover rounded-lg"
+                />
               </div>
-              
-              <button
-                onClick={() => handleRemoveItem(item.id)}
-                className="text-red-500 hover:text-red-600"
-              >
-                삭제
-              </button>
+
+              {/* 상품 정보 */}
+              <div className="flex-grow">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3
+                      className="font-medium hover:text-primary cursor-pointer"
+                      onClick={() => router.push(`/market/${item.crop.id}`)}
+                    >
+                      {item.crop.name}
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      {item.crop.farmer.farm_name || item.crop.farmer.full_name}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handleRemoveItem(item.id)}
+                    className="text-gray-400 hover:text-red-500"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="mt-4 flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
+                      className="px-2 py-1 border rounded hover:bg-gray-100"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      value={item.quantity}
+                      onChange={(e) =>
+                        handleQuantityChange(item.id, Number(e.target.value))
+                      }
+                      className="w-16 text-center border rounded"
+                      min="1"
+                      max={item.crop.quantity_available}
+                    />
+                    <button
+                      onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
+                      className="px-2 py-1 border rounded hover:bg-gray-100"
+                    >
+                      +
+                    </button>
+                    <span className="text-sm text-gray-500">
+                      {item.crop.unit}
+                    </span>
+                  </div>
+                  <div className="font-medium">
+                    {(item.crop.price_per_unit * item.quantity).toLocaleString()}원
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
-      
-      <div className="mt-8 border-t pt-4">
-        <div className="flex justify-between items-center mb-4">
-          <button
-            onClick={handleClearCart}
-            className="text-red-500 hover:text-red-600"
-          >
-            장바구니 비우기
-          </button>
-          <div className="text-xl font-bold">
-            총 금액: {cart.total_price.toLocaleString()}원
-          </div>
+          ))}
         </div>
-        
-        <div className="flex justify-end">
-          <button
-            onClick={handleCheckout}
-            className="bg-green-600 text-white px-8 py-3 rounded-lg hover:bg-green-700"
-          >
-            주문하기
-          </button>
+
+        {/* 주문 요약 */}
+        <div className="lg:col-span-1">
+          <div className="bg-white p-6 rounded-lg shadow-sm">
+            <h2 className="text-lg font-bold mb-4">주문 요약</h2>
+            
+            <div className="space-y-2 mb-4">
+              <div className="flex justify-between">
+                <span className="text-gray-600">상품 수</span>
+                <span>{cart.items.length}개</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">총 상품 금액</span>
+                <span>{cart.total_price.toLocaleString()}원</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => router.push('/checkout')}
+              className="w-full py-3 bg-primary text-white rounded-lg hover:bg-primary-600"
+            >
+              주문하기
+            </button>
+          </div>
         </div>
       </div>
     </div>

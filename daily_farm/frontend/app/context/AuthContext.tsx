@@ -2,15 +2,14 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
-import * as api from '../lib/api';
+import apiClient from '../lib/api';
 
 interface AuthContextType {
   user: User | null;
-  isLoading: boolean;
-  error: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<{ token: string; user: User }>;
   logout: () => Promise<void>;
-  register: (userData: any) => Promise<void>;
+  updateUser: (userData: Partial<User>) => Promise<User>;
+  isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -18,66 +17,54 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // 페이지 로드 시 사용자 정보 확인
-    const checkAuth = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        if (token) {
-          const response = await api.getCurrentUser();
-          setUser(response);
-        }
-      } catch (err) {
-        console.error('Auth check failed:', err);
-        localStorage.removeItem('token');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     checkAuth();
   }, []);
 
+  const checkAuth = async () => {
+    try {
+      const user = await apiClient.getCurrentUser();
+      setUser(user);
+    } catch (error) {
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const login = async (email: string, password: string) => {
     try {
-      setError(null);
-      const response = await api.login({ username: email, password });
-      const userResponse = await api.getCurrentUser();
-      setUser(userResponse);
-    } catch (err: any) {
-      setError(err.message || '로그인에 실패했습니다.');
-      throw err;
+      const response = await apiClient.login({ email, password });
+      setUser(response.user);
+      localStorage.setItem('token', response.token);
+      return response;
+    } catch (error) {
+      throw error;
     }
   };
 
   const logout = async () => {
     try {
-      setError(null);
-      localStorage.removeItem('token');
       setUser(null);
-    } catch (err: any) {
-      setError(err.message || '로그아웃에 실패했습니다.');
-      throw err;
+      localStorage.removeItem('token');
+    } catch (error) {
+      console.error('Logout error:', error);
     }
   };
 
-  const register = async (userData: any) => {
+  const updateUser = async (userData: Partial<User>) => {
     try {
-      setError(null);
-      await api.register(userData);
-      await login(userData.email, userData.password);
-    } catch (err: any) {
-      setError(err.message || '회원가입에 실패했습니다.');
-      throw err;
+      const updatedUser = await apiClient.updateUserProfile(userData);
+      setUser(updatedUser);
+      return updatedUser;
+    } catch (error) {
+      throw error;
     }
   };
 
   return (
-    <AuthContext.Provider
-      value={{ user, isLoading, error, login, logout, register }}
-    >
+    <AuthContext.Provider value={{ user, login, logout, updateUser, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

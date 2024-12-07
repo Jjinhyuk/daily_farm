@@ -3,12 +3,11 @@ export type AuthProvider = 'LOCAL' | 'GOOGLE' | 'KAKAO';
 
 export interface User {
   id: number;
-  email: string;
   full_name: string;
-  user_type: UserType;
+  email: string;
   is_active: boolean;
-  auth_provider: AuthProvider;
-  social_id?: string;
+  user_type: 'FARMER' | 'CUSTOMER';
+  auth_provider: 'LOCAL' | 'GOOGLE' | 'KAKAO';
   phone_number?: string;
   profile_image?: string;
   farm_name?: string;
@@ -18,11 +17,7 @@ export interface User {
   updated_at: string;
 }
 
-export enum CropStatus {
-  GROWING = "GROWING",
-  HARVESTED = "HARVESTED",
-  SOLD_OUT = "SOLD_OUT"
-}
+export type CropStatus = 'GROWING' | 'HARVESTED' | 'SOLD';
 
 export interface Crop {
   id: number;
@@ -43,15 +38,8 @@ export interface Crop {
   created_at: string;
   updated_at: string;
   is_active: boolean;
-  farmer: {
-    id: number;
-    full_name: string;
-    farm_name: string;
-    farm_location: string;
-  };
-  total_reviews: number;
-  average_rating: number;
-  total_orders: number;
+  farmer: User;
+  reviews?: Review[];
 }
 
 export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
@@ -65,24 +53,13 @@ export interface OrderItem {
   total_price: number;
   created_at: string;
   updated_at: string;
-  crop: {
-    id: number;
-    name: string;
-    images: string[];
-    unit: string;
-    farmer: {
-      id: number;
-      full_name: string;
-      farm_name: string | null;
-    };
-  };
+  crop: Crop;
 }
 
 export interface Order {
   id: number;
   consumer_id: number;
   farmer_id: number;
-  items: OrderItem[];
   total_price: number;
   status: OrderStatus;
   delivery_address: string;
@@ -94,17 +71,10 @@ export interface Order {
   shipped_at?: string;
   delivered_at?: string;
   cancelled_at?: string;
+  consumer: User;
+  farmer: User;
+  items: OrderItem[];
   reviews: Review[];
-  consumer: {
-    id: number;
-    full_name: string;
-    email: string;
-  };
-  farmer: {
-    id: number;
-    full_name: string;
-    farm_name: string | null;
-  };
 }
 
 export interface CartItemUpdateData {
@@ -118,7 +88,6 @@ export interface CartItem {
   quantity: number;
   created_at: string;
   updated_at: string;
-  total_price: number;
   crop: Crop;
 }
 
@@ -140,16 +109,7 @@ export interface Review {
   content: string;
   created_at: string;
   updated_at: string;
-  user: {
-    id: number;
-    full_name: string;
-    profile_image?: string;
-  };
-  crop: {
-    id: number;
-    name: string;
-    images: string[];
-  };
+  user: User;
 }
 
 export interface Message {

@@ -1,140 +1,223 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
-import Image from 'next/image'
-import Link from 'next/link'
-import { getAvailableCrops } from '@/app/lib/api'
-import { toast } from 'react-hot-toast'
-import { Crop, CropStatus } from '@/app/types'
+import React, { useState, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import apiClient from '../lib/api';
+import type { Crop, CropStatus, SortOption } from '../types';
+import Card from '@/app/components/ui/Card';
+import LoadingSpinner from '@/app/components/ui/LoadingSpinner';
+import Alert from '@/app/components/ui/Alert';
+import FilterBar from '@/app/components/market/FilterBar';
+import { useDebounce } from '../hooks/useDebounce';
+
+const ITEMS_PER_PAGE = 12;
 
 export default function MarketPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [crops, setCrops] = useState<Crop[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [sortBy, setSortBy] = useState('latest');
-  const [region, setRegion] = useState('all');
+  const [error, setError] = useState<string | null>(null);
+  const [totalPages, setTotalPages] = useState(1);
+
+  // 필터 상태
+  const [searchValue, setSearchValue] = useState(searchParams.get('search') || '');
+  const [selectedStatus, setSelectedStatus] = useState<CropStatus | ''>(
+    (searchParams.get('status') as CropStatus | '') || ''
+  );
+  const [selectedSort, setSelectedSort] = useState<SortOption>('latest');
+  const [minPrice, setMinPrice] = useState<number | undefined>(
+    searchParams.get('min_price') ? Number(searchParams.get('min_price')) : undefined
+  );
+  const [maxPrice, setMaxPrice] = useState<number | undefined>(
+    searchParams.get('max_price') ? Number(searchParams.get('max_price')) : undefined
+  );
+  const [selectedRegion, setSelectedRegion] = useState(searchParams.get('region') || '');
+
+  const debouncedSearch = useDebounce(searchValue, 300);
+  const debouncedMinPrice = useDebounce(minPrice, 300);
+  const debouncedMaxPrice = useDebounce(maxPrice, 300);
+
+  const page = Number(searchParams.get('page')) || 1;
 
   useEffect(() => {
     const fetchCrops = async () => {
       try {
         setIsLoading(true);
-        const data = await getAvailableCrops();
-        setCrops(data);
-      } catch (error) {
-        console.error('Error fetching crops:', error);
-        if (error instanceof Error) {
-          toast.error(error.message);
-        } else {
-          toast.error('작물 목록을 불러오는데 실패했습니다.');
-        }
+        setError(null);
+        const response = await apiClient.getCrops({
+          page,
+          limit: ITEMS_PER_PAGE,
+          status: selectedStatus || undefined,
+          search: debouncedSearch || undefined,
+          sort_by: selectedSort,
+          min_price: debouncedMinPrice,
+          max_price: debouncedMaxPrice,
+          region: selectedRegion || undefined,
+        });
+        setCrops(response.items);
+        setTotalPages(response.total_pages);
+      } catch (err: any) {
+        setError(err.message || '작물 목록을 불러오는데 실패했습니다.');
+        setCrops([]);
+        setTotalPages(1);
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchCrops();
-  }, []);
+  }, [
+    page,
+    selectedStatus,
+    debouncedSearch,
+    selectedSort,
+    debouncedMinPrice,
+    debouncedMaxPrice,
+    selectedRegion,
+  ]);
 
-  const sortedCrops = [...crops].sort((a, b) => {
-    switch (sortBy) {
-      case 'price_low':
-        return a.price_per_unit - b.price_per_unit;
-      case 'price_high':
-        return b.price_per_unit - a.price_per_unit;
-      case 'rating':
-        return (b.average_rating || 0) - (a.average_rating || 0);
-      default:
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  const updateQueryParams = (updates: Record<string, string | undefined>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    
+    // 페이지 파라미터 초기화 (필터 변경 시)
+    if (!('page' in updates)) {
+      params.delete('page');
     }
-  });
 
-  const filteredCrops = sortedCrops.filter(crop => {
-    if (region === 'all') return true;
-    return crop.farmer.farm_location.includes(region);
-  });
+    // 업데이트할 파라미터 설정
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value) {
+        params.set(key, value);
+      } else {
+        params.delete(key);
+      }
+    });
+
+    router.push(`/market?${params.toString()}`);
+  };
+
+  const handleSearch = (value: string) => {
+    setSearchValue(value);
+    updateQueryParams({ search: value || undefined });
+  };
+
+  const handleStatusChange = (status: CropStatus | '') => {
+    setSelectedStatus(status);
+    updateQueryParams({ status: status || undefined });
+  };
+
+  const handleSortChange = (sort: SortOption) => {
+    setSelectedSort(sort);
+    updateQueryParams({ sort_by: sort });
+  };
+
+  const handlePriceRangeChange = (min: number | undefined, max: number | undefined) => {
+    setMinPrice(min);
+    setMaxPrice(max);
+    updateQueryParams({
+      min_price: min?.toString(),
+      max_price: max?.toString(),
+    });
+  };
+
+  const handleRegionChange = (region: string) => {
+    setSelectedRegion(region);
+    updateQueryParams({ region: region || undefined });
+  };
+
+  const handlePageChange = (newPage: number) => {
+    updateQueryParams({ page: newPage.toString() });
+  };
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-green-500"></div>
+      <div className="flex justify-center items-center min-h-[50vh]">
+        <LoadingSpinner size="lg" />
       </div>
     );
   }
 
   return (
-    <div className="bg-white">
-      <div className="mx-auto max-w-2xl px-4 py-16 sm:px-6 sm:py-24 lg:max-w-7xl lg:px-8">
-        <div className="flex justify-between items-center mb-8">
-          <h2 className="text-2xl font-bold tracking-tight text-gray-900">신선한 작물 마켓</h2>
-          <div className="flex gap-4">
-            <select
-              className="rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-            >
-              <option value="latest">최신순</option>
-              <option value="price_low">가격 낮은순</option>
-              <option value="price_high">가격 높은순</option>
-              <option value="rating">평점순</option>
-            </select>
-            <select
-              className="rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
-              value={region}
-              onChange={(e) => setRegion(e.target.value)}
-            >
-              <option value="all">전체 지역</option>
-              <option value="충청">충청도</option>
-              <option value="전라">전라도</option>
-              <option value="경상">경상도</option>
-              <option value="강원">강원도</option>
-              <option value="제주">제주도</option>
-            </select>
-          </div>
-        </div>
+    <div className="container mx-auto px-4 py-8">
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-2xl font-bold">농산물 마켓</h1>
+      </div>
 
-        {filteredCrops.length === 0 ? (
-          <div className="text-center py-10">
-            <p className="text-gray-500">현재 판매 중인 작물이 없습니다.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 xl:gap-x-8">
-            {filteredCrops.map((crop) => (
-              <Link key={crop.id} href={`/market/${crop.id}`} className="group">
-                <div className="aspect-h-1 aspect-w-1 w-full overflow-hidden rounded-lg bg-gray-200 xl:aspect-h-8 xl:aspect-w-7">
-                  <div className="relative h-full w-full">
-                    {crop.images && crop.images.length > 0 ? (
-                      <Image
-                        src={crop.images[0]}
-                        alt={crop.name}
-                        fill
-                        className="object-cover object-center group-hover:opacity-75"
-                      />
-                    ) : (
-                      <div className="flex items-center justify-center h-full bg-gray-100">
-                        <span className="text-gray-400">이미지 없음</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="mt-4">
-                  <h3 className="text-sm text-gray-700">{crop.name}</h3>
-                  <div className="flex justify-between items-center mt-1">
-                    <p className="text-lg font-medium text-gray-900">
+      <FilterBar
+        onSearch={handleSearch}
+        onStatusChange={handleStatusChange}
+        onSortChange={handleSortChange}
+        onPriceRangeChange={handlePriceRangeChange}
+        onRegionChange={handleRegionChange}
+        searchValue={searchValue}
+        selectedStatus={selectedStatus}
+        selectedSort={selectedSort}
+        minPrice={minPrice}
+        maxPrice={maxPrice}
+        selectedRegion={selectedRegion}
+      />
+
+      {error && (
+        <div className="mb-6">
+          <Alert type="error" message={error} />
+        </div>
+      )}
+
+      {crops.length === 0 ? (
+        <div className="text-center py-12">
+          <p className="text-gray-500">
+            {error ? '서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.' : '등록된 농산물이 없습니다.'}
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {crops.map((crop) => (
+              <Card
+                key={crop.id}
+                title={crop.name}
+                description={crop.description}
+                imageUrl={crop.images[0]}
+                imageAlt={`${crop.name} 이미지`}
+                badge={crop.status === 'HARVESTED' ? '수확 완료' : undefined}
+                footer={
+                  <div className="flex justify-between items-center">
+                    <span className="text-primary font-semibold">
                       {crop.price_per_unit.toLocaleString()}원/{crop.unit}
-                    </p>
-                    <div className="flex items-center">
-                      <span className="text-yellow-400">★</span>
-                      <span className="ml-1 text-sm text-gray-500">
-                        {crop.average_rating.toFixed(1)}
-                      </span>
-                    </div>
+                    </span>
+                    <span className="text-sm text-gray-500">
+                      {crop.farmer.farm_name || crop.farmer.full_name}
+                    </span>
                   </div>
-                  <p className="mt-1 text-sm text-gray-500">{crop.farmer.farm_name}</p>
-                </div>
-              </Link>
+                }
+                onClick={() => router.push(`/market/${crop.id}`)}
+              />
             ))}
           </div>
-        )}
-      </div>
+
+          {totalPages > 1 && (
+            <div className="flex justify-center mt-8">
+              <nav className="flex gap-2">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+                  <button
+                    key={pageNum}
+                    onClick={() => handlePageChange(pageNum)}
+                    className={`
+                      px-4 py-2 rounded
+                      ${pageNum === page
+                        ? 'bg-primary text-white'
+                        : 'bg-white text-gray-700 hover:bg-gray-100'}
+                    `}
+                  >
+                    {pageNum}
+                  </button>
+                ))}
+              </nav>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 } 

@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Cart, CartItem } from '../types';
-import * as api from '../lib/api';
+import apiClient from '../lib/api';
 import { useAuth } from './AuthContext';
 
 interface CartContextType {
@@ -30,8 +30,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     try {
       setIsLoading(true);
       setError(null);
-      const response = await api.getCart();
-      setCart(response);
+      const cart = await apiClient.getCart();
+      setCart(cart);
     } catch (err: any) {
       setError(err.message || '장바구니를 불러오는데 실패했습니다.');
       console.error('Failed to fetch cart:', err);
@@ -52,7 +52,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     try {
       setIsLoading(true);
       setError(null);
-      await api.addCartItem({ crop_id: cropId, quantity });
+      await apiClient.addCartItem({ crop_id: cropId, quantity });
       await fetchCart();
     } catch (err: any) {
       setError(err.message || '상품을 장바구니에 추가하는데 실패했습니다.');
@@ -66,7 +66,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     try {
       setIsLoading(true);
       setError(null);
-      await api.updateCartItem(itemId, { quantity });
+      await apiClient.updateCartItem(itemId, { quantity });
       await fetchCart();
     } catch (err: any) {
       setError(err.message || '장바구니 수정에 실패했습니다.');
@@ -80,7 +80,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     try {
       setIsLoading(true);
       setError(null);
-      await api.removeCartItem(itemId);
+      await apiClient.removeCartItem(itemId);
       await fetchCart();
     } catch (err: any) {
       setError(err.message || '상품을 장바구니에서 제거하는데 실패했습니다.');
@@ -94,7 +94,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     try {
       setIsLoading(true);
       setError(null);
-      await api.clearCart();
+      await apiClient.clearCart();
       setCart(null);
     } catch (err: any) {
       setError(err.message || '장바구니 비우기에 실패했습니다.');
